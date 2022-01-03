@@ -1,0 +1,230 @@
+---
+title: "sim"
+author: "Hannah"
+date: "1/1/2022"
+output: word_document
+---
+
+```{r functions}
+library(dvmisc) # load for extracting mse 
+library(car) # load for non-constant variance test
+
+
+# function to get Y values
+get_y <- function(ss, beta1, beta3, sigma, grp, targ){
+  
+  errors <- rnorm(ss, mean = 0, sd = sigma) # define errors
+  Y <- b0 + beta1*(grp == "VR") + b2*targ + beta3*targ*(grp == "VR") + errors # get estimated Y values
+  
+  return(Y) # return Y values as output of function
+}
+
+
+# function to extract parameters of interest
+params <- function(model_name, grp, targ){
+  
+  my_list <- rep(NA, 23) # create empty list 
+  
+  # model parameters & tests
+  my_list[1] <- model_name$coef[1] # b0 coefficient
+  my_list[2] <- model_name$coef[2] # b1 coefficient
+  my_list[3] <- model_name$coef[3] # b2 coefficient
+  my_list[4] <- model_name$coef[4] # b3 coefficient
+  my_list[5] <- summary(model_name)$coef[1,2] # b0 SE
+  my_list[6] <- summary(model_name)$coef[2,2] # b1 SE
+  my_list[7] <- summary(model_name)$coef[3,2] # b2 SE
+  my_list[8] <- summary(model_name)$coef[4,2] # b3 SE
+  my_list[9] <- ifelse((summary(model_name)$coef[1,4] < 0.05),1,0) # b0 sig test
+  my_list[10] <- ifelse((summary(model_name)$coef[2,4] < 0.05),1,0) # b1 sig test
+  my_list[11] <- ifelse((summary(model_name)$coef[3,4] < 0.05),1,0) # b2 sig test
+  my_list[12] <- ifelse((summary(model_name)$coef[4,4] < 0.05),1,0) # b3 sig test
+  my_list[13] <- summary(model_name)$adj # adjusted r-squared 
+  my_list[14] <- ifelse((ncvTest(model_name)$'p' < 0.05),1,0) # non constant variance test
+  my_list[15] <- get_mse(model_name) # mean square error
+
+  # estimated means
+  my_list[16] <- mean(model_name$fitted.values[grp == 'RW' & targ == 3])
+  my_list[17] <- mean(model_name$fitted.values[grp == 'RW' & targ == 6])
+  my_list[18] <- mean(model_name$fitted.values[grp == 'RW' & targ == 9])
+  my_list[19] <- mean(model_name$fitted.values[grp == 'RW' & targ == 12])
+  my_list[20] <- mean(model_name$fitted.values[grp == 'VR' & targ == 3])
+  my_list[21] <- mean(model_name$fitted.values[grp == 'VR' & targ == 6])
+  my_list[22] <- mean(model_name$fitted.values[grp == 'VR' & targ == 9])
+  my_list[23] <- mean(model_name$fitted.values[grp == 'VR' & targ == 12])
+ 
+  return(my_list)
+}
+
+
+# function to fit models
+results <- function(p_array, ss, beta1, beta3, sigma, grp, targ){
+  for(i in 1:nreps){ 
+    
+    y_val <- get_y(ss, beta1, beta3, sigma, grp, targ) # call get_y function to estimate Y values
+    y_val_diff <- (y_val - targ) # calculate difference in estimated vs true vals
+    
+    # component approach
+    model <- lm(y_val ~ grp*targ) # estimate model
+    param_results <- params(model, grp, targ) # call params function to extract results
+    p_array[i,1, ] <- param_results # save results to array
+    
+    # ratio approach
+    model <- lm(y_val/targ ~ grp*targ)
+    param_results <- params(model, grp, targ)
+    p_array[i,2,] <- param_results
+    
+    # relative error
+    model <- lm(y_val_diff/targ ~ grp*targ) 
+    param_results <- params(model, grp, targ)
+    p_array[i,3,] <- param_results
+    
+    # signed error
+    model <- lm(y_val_diff ~ grp*targ)
+    param_results <- params(model, grp, targ)
+    p_array[i,4,] <- param_results
+    
+    # absolute error
+    model <- lm(abs(y_val_diff) ~ grp*targ) 
+    param_results <- params(model, grp, targ)
+    p_array[i,5,] <- param_results
+  }
+  return(p_array) # return array with results
+}
+
+
+# function to iterate over sigma values
+sig_fun <- function(sig_array, ss, beta1, beta3, grp, targ){
+  
+  count <- 1 # create count variable 
+  
+  for(j in sigmas){
+
+    s_results <- results(param_array, ss, beta1, beta3, j, grp, targ) # call results function
+    sig_array[,,,count] <- s_results # save results to array
+    count <- count + 1 # increase count
+  }
+  return(sig_array) # return array with results
+}
+
+
+# function to iterate over beta 1 values
+b1_fun <- function(b1array, ss, beta3, grp, targ){
+  
+  count <- 1 # create count variable 
+  
+  for(k in b1s){
+    
+    b1_results <- sig_fun(s_array, ss, k, beta3, grp, targ) # call sigma function
+    b1array[,,,,count] <- b1_results # save results to array 
+    count <- count + 1 # increase count
+  }
+  return(b1array) # return array with results
+}
+
+
+# function to iterate over beta 3 values
+b3_fun <- function(b3array, ss, grp, targ){
+  
+  count <- 1 # create count variable 
+  
+  for(b in b3s){
+    b3_results <- b1_fun(b1_array, ss, b, grp, targ) # call beta 2 function
+    b3array[,,,,,count] <- b3_results # save results to array
+    count <- count + 1 # increase count
+  }
+  return(b3array) # return array with results
+}
+
+
+# function to iterate over  different sample sizes
+sample_fun <- function(sample_array){
+  
+  count <- 1 # create count variable 
+  
+  for(sample in sample_size){
+    
+    group <- rep(c("RW", "VR"), each = (sample/2)) # create environment groups
+    targ_dists <- rep(c(3,6,9,12,3,6,9,12), each = (sample/8)) # create target distances
+    
+    ss_results <- b3_fun(b3_array, sample, group, targ_dists) # call beta 3 function
+    sample_array[,,,,,,count] <- ss_results # save results to array
+    count <- count + 1 # increase count
+  }
+  return(sample_array) # return array with results
+}
+  
+```
+
+
+```{r setup}
+
+# set up global variables
+set.seed(987654321) # set seed
+sample_size = c(200, 600, 1000) # total sample size
+nreps = 1000 # totalsimulation repetitions
+b0 <- 0 # beta 0 value (i.e., the intercept)
+b1s <- c(0, -0.2, -0.4, -0.6, -0.8, -1) # beta 1 values
+b2 <- 1 # beta 2 value
+b3s <- c(0, -0.1) # beta 3 values
+sigmas <- c(0.5, 0.75, 1, 1.25, 1.5) # standard deviations of the error term
+
+
+# create arrays for saving results from each function
+param_array <- array(NA, c(nreps, 5, 23)) # array for the parameters
+s_array <- array(NA, c(nreps, 5, 23, length(sigmas))) # array for sigma function
+b1_array <- array(NA, c(nreps, 5, 23, length(sigmas), length(b1s))) # array for b1 function
+b3_array <- array(NA, c(nreps, 5, 23, length(sigmas), length(b1s), length(b3s))) # array for b3 function
+ss_array <- array(NA, c(nreps, 5, 23, length(sigmas), length(b1s), length(b3s), length(sample_size)))
+
+# run simulation
+findings <- sample_fun(ss_array)
+
+```
+
+
+```{r extract results}
+
+findings_avg <- colMeans(findings, dims = 1) # get average results across each sim rep
+
+# function to convert array to a dataframe 
+concat_fun <- function(approach){
+  
+  # convert array into a df
+  df <- as.data.frame(matrix(unlist(findings_avg[approach,,,,,]), ncol = 23, byrow = T)) 
+  
+  # change the column names
+  colnames(df) <- c('beta0', 'beta1', 'beta2', 'beta3', 'b0_SE', 'b1_SE', 'b2_SE', 'b3_SE', 'b0_sig',
+                    'b1_sig', 'b2_sig', 'b3_sig', 'r_sq', 'ncv_sig', 'mse', 'RW_3', 'RW_6', 'RW_9', 
+                    'RW_12', 'VR_3', 'VR_6', 'VR_9', 'VR_12')
+  # create other columns
+  error_var <- rep(sigmas, 36)
+  b1_val <- rep(rep(b1s, each = 5), 6)
+  b3_val <- rep(rep(b3s, each = 30), 3)
+  sample_val <- rep(sample_size, each = 60)
+  
+  if (approach == 1){
+    sim <- rep('component', 180)
+  } else if (approach == 2){
+    sim <- rep('ratio', 180)
+  } else if (approach == 3){
+    sim <- rep('relative_error', 180)
+  } else if (approach == 4){
+    sim <- rep('signed_error', 180)
+  } else {
+    sim <- rep('absolute_error', 180)
+  } 
+  
+  df2 <- cbind(sim, error_var, b1_val, b3_val, sample_val, df)
+  
+  return(df2)
+}
+
+# run function for each accuracy method (i.e., for each value of dim 1 of findings_avg)  
+final_df <- rbind(concat_fun(1), concat_fun(2), concat_fun(3), concat_fun(4), concat_fun(5))
+
+# export to csv
+# write.csv(final_df, file = 'C:/Users/Hannah/Desktop/stats_paper/sim_results.csv', row.names = F)
+
+
+```
+
