@@ -223,7 +223,7 @@ concat_fun <- function(approach){
 final_df <- rbind(concat_fun(1), concat_fun(2), concat_fun(3), concat_fun(4), concat_fun(5))
 
 # export to csv
-# write.csv(final_df, file = 'C:/Users/Hannah/Desktop/stats_paper/sim_results.csv', row.names = F)
+write.csv(final_df, file = 'sim_results.csv', row.names = F)
 
 
 ```
